@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tarm/goserial"
+	serial "github.com/tarm/goserial"
 )
 
 const (
@@ -121,10 +121,10 @@ var ffmpeg *exec.Cmd
 func goal(team string) {
 	if time.Since(lastGoal) > time.Second*3 {
 		switch team {
-		case "1\r\n":
+		case "1\n":
 			team1++
 			fmt.Printf("team 1 score:%v\n", team1)
-		case "2\r\n":
+		case "2\n":
 			team2++
 			fmt.Printf("team 2 score:%v\n", team2)
 		default:
