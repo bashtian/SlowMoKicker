@@ -1,2 +1,2 @@
 #!/bin/bash
-ffprobe -v quiet -show_format output.avi | grep duration | awk -F \= '{print $2}'
+ffprobe -v quiet -show_format output.mkv | grep duration | awk -F \= '{print $2}'
