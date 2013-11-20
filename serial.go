@@ -26,6 +26,16 @@ const (
 var debug = flag.Bool("d", false, "simulate input")
 var videoInput = flag.String("v", "/dev/video0", "video input device")
 
+var lastGoal = time.Now()
+
+var team1 = 0
+var team2 = 0
+
+var mplayer *exec.Cmd
+var ffmpeg *exec.Cmd
+
+var stopRecording = make(chan bool)
+
 func main() {
 	//runtime.GOMAXPROCS(runtime.NumCPU())
 	flag.Parse()
@@ -110,21 +120,13 @@ func startMatch(reader io.Reader) {
 	}
 }
 
-var lastGoal = time.Now()
-
-var team1 = 0
-var team2 = 0
-
-var mplayer *exec.Cmd
-var ffmpeg *exec.Cmd
-
 func goal(team string) {
 	if time.Since(lastGoal) > time.Second*3 {
-		switch team {
-		case "1\n":
+		switch {
+		case strings.Contains(team, "1"):
 			team1++
 			fmt.Printf("team 1 score:%v\n", team1)
-		case "2\n":
+		case strings.Contains(team, "2"):
 			team2++
 			fmt.Printf("team 2 score:%v\n", team2)
 		default:
