@@ -84,14 +84,10 @@ func startMatch(reader io.Reader) {
 		for {
 
 			//log.Print("test")
-			s, err := r.ReadString('\n')
-			if strings.Contains(s, "1") {
-				log.Print("Reading from serial port ", s)
-			}
-
+			bytes, _, err := r.ReadLine()
+			//log.Print("Reading from serial port ", s)
 			//if s == "1" || s == "2" {
-			rc <- &readResult{s, nil}
-
+			rc <- &readResult{string(bytes), nil}
 			//}
 
 			if err != nil && err != io.EOF {
@@ -146,7 +142,8 @@ func goal(team string) {
 		lastGoal = time.Now()
 
 		go writeSrt()
-		go interruptRecording()
+		stopRecording <- true
+
 		if team1 >= maxPoints || team2 >= maxPoints {
 			team1, team2 = 0, 0
 		}
@@ -185,18 +182,38 @@ func interruptRecording() {
 func startRecordingLoop() {
 	os.Remove(tempFile)
 	for {
-		log.Println("start recording")
 		//ffmpeg = exec.Command("ffmpeg", "-f", "video4linux2", "-s", "640x480", "-r", "60", "-i", "/dev/video0", "-vcodec", "libx264", tempFile)
-		ffmpeg = exec.Command("ffmpeg", "-f", "video4linux2", "-s", "640x480", "-r", "60", "-i", *videoInput, tempFile)
+		errorChan := make(chan error)
+		successChan := make(chan bool)
 
-		b, err := ffmpeg.CombinedOutput()
-		if err != nil && err.Error() != "exit status 255" {
-			log.Fatal(string(b))
-			//fmt.Printf("%s", b)
+		go func() {
+			log.Println("start recording")
+			ffmpeg = exec.Command("ffmpeg", "-f", "video4linux2", "-s", "640x480", "-r", "60", "-i", *videoInput, tempFile)
+			b, err := ffmpeg.CombinedOutput()
+			if err != nil && err.Error() != "exit status 255" {
+				log.Print(string(b))
+				//fmt.Printf("%s", b)
+				errorChan <- err
+			} else {
+				successChan <- true
+			}
+
+		}()
+
+		select {
+		case <-stopRecording:
+			log.Println("stopRecording")
+			interruptRecording()
+			<-successChan
+		// a read from ch has occurred
+		case err := <-errorChan:
+			log.Println("got error chan")
+			log.Fatal(err)
+			// the read from ch has timed out
 		}
 
 		os.Remove(outFile)
-		err = os.Rename(tempFile, outFile)
+		err := os.Rename(tempFile, outFile)
 		if err != nil {
 			log.Print("error renaming file:" + err.Error())
 			continue
@@ -226,10 +243,10 @@ func startMplayer() *exec.Cmd {
 	if err != nil {
 		log.Fatal(err)
 	}
-	//fmt.Printf("%q", out)
-	o := strings.Split(string(out), "\n")
 	fmt.Printf("The lenght is %s\n", out)
-	l, err := strconv.ParseFloat(o[0], 64)
+	o1 := strings.Split(string(out), "\n")
+	o2 := strings.Split(o1[0], " ")
+	l, err := strconv.ParseFloat(o2[0], 64)
 	if err != nil {
 		log.Fatal(err)
 	}
