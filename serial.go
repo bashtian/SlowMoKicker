@@ -76,17 +76,22 @@ func startMatch(reader io.Reader) {
 		b   string
 		err error
 	}
-	rc := make(chan *readResult)
+	rc := make(chan *readResult, 100)
 	r := bufio.NewReader(reader)
 	go func() {
-		time.Sleep(time.Second * 3)
+		lastGoal = time.Now()
+		//time.Sleep(time.Second * 3)
 		for {
 
 			//log.Print("test")
 			s, err := r.ReadString('\n')
-			//log.Print("Reading from serial port ", s)
+			if strings.Contains(s, "1") {
+				log.Print("Reading from serial port ", s)
+			}
+
 			//if s == "1" || s == "2" {
 			rc <- &readResult{s, nil}
+
 			//}
 
 			if err != nil && err != io.EOF {
@@ -109,18 +114,19 @@ func startMatch(reader io.Reader) {
 				//    while being read, we'll receive an EOF.
 				log.Fatal("  error:" + got.err.Error())
 			default:
-				log.Print(got.b)
+				//log.Println("channel:", got.b)
 				goal(got.b)
 			}
 		case <-timeout.C:
 			//stop waiting for the reader to send something on channel rc
 		}
 
-		//time.Sleep(20 * time.Millisecond) //stutter the infinite loop.
+		time.Sleep(2 * time.Millisecond) //stutter the infinite loop.
 	}
 }
 
 func goal(team string) {
+	//log.Println("goal:", team)
 	if time.Since(lastGoal) > time.Second*3 {
 		switch {
 		case strings.Contains(team, "1"):
@@ -136,11 +142,11 @@ func goal(team string) {
 
 			return
 		}
-
+		log.Println("got goal")
 		lastGoal = time.Now()
 
-		writeSrt()
-		interruptRecording()
+		go writeSrt()
+		go interruptRecording()
 		if team1 >= maxPoints || team2 >= maxPoints {
 			team1, team2 = 0, 0
 		}
@@ -185,7 +191,7 @@ func startRecordingLoop() {
 
 		b, err := ffmpeg.CombinedOutput()
 		if err != nil && err.Error() != "exit status 255" {
-			log.Fatal(b)
+			log.Fatal(string(b))
 			//fmt.Printf("%s", b)
 		}
 
@@ -221,7 +227,7 @@ func startMplayer() *exec.Cmd {
 		log.Fatal(err)
 	}
 	//fmt.Printf("%q", out)
-	o := strings.Split(string(out), " ")
+	o := strings.Split(string(out), "\n")
 	fmt.Printf("The lenght is %s\n", out)
 	l, err := strconv.ParseFloat(o[0], 64)
 	if err != nil {
@@ -234,10 +240,10 @@ func startMplayer() *exec.Cmd {
 	//cmd := exec.Command("mplayer", "-fs" ,"-fixed-vo", "-ss", newStart, "-endpos", "1.00", "-speed", "1/4", "-loop", "0", outFile)
 	cmd := exec.Command("mplayer", "-fs", "-fixed-vo", "-ss", newStart, "-speed", "1/4", "-sub", "score.srt", "-loop", "0", outFile)
 	//cmd := exec.Command("cvlc", "-L", "--rate", "0.25", "--start-time", newStart, "--sub-file=", "score.srt", "--input-fast-seek", outFile)
-	cmd.Stdout = os.Stdout
+	//cmd.Stdout = os.Stdout
 	err = cmd.Start()
 	if err != nil {
-		log.Fatal(err)
+		//log.Fatal(err)
 	}
 	return cmd
 }
