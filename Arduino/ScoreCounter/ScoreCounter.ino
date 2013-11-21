@@ -63,7 +63,7 @@ void loop() {
 
   // fade the LED using the calibrated value:
 
-  if (sensorValue > 60) {
+  if (sensorValue > 600) {
     digitalWrite(ledPin, LOW);
     //Serial.println(2);
   } else {
