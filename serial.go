@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -26,15 +28,22 @@ const (
 var debug = flag.Bool("d", false, "simulate input")
 var videoInput = flag.String("v", "/dev/video0", "video input device")
 
-var lastGoal = time.Now()
-
-var team1 = 0
-var team2 = 0
+//var lastGoalTime = time.Now()
+//var lastGoalTeam = 0
 
 var mplayer *exec.Cmd
 var ffmpeg *exec.Cmd
 
 var stopRecording = make(chan bool)
+
+type Stats struct {
+	Team1        int64
+	Team2        int64
+	LastGoalTime time.Time
+	LastGoalTeam int64
+}
+
+var stats = Stats{LastGoalTime: time.Now()}
 
 func main() {
 	//runtime.GOMAXPROCS(runtime.NumCPU())
@@ -51,7 +60,7 @@ func main() {
 
 			}
 		}()
-		startMatch(r)
+		go startMatch(r)
 
 	} else {
 		tty := flag.Arg(0)
@@ -67,6 +76,10 @@ func main() {
 		startMatch(s)
 	}
 
+	http.HandleFunc("/", handler)
+	http.HandleFunc("/reset", resetHandler)
+	http.HandleFunc("/restart", restartHandler)
+	http.ListenAndServe(":8080", nil)
 }
 
 func startMatch(reader io.Reader) {
@@ -79,10 +92,9 @@ func startMatch(reader io.Reader) {
 	rc := make(chan *readResult, 100)
 	r := bufio.NewReader(reader)
 	go func() {
-		lastGoal = time.Now()
+		//stats.LastGoalTime = time.Now()
 		//time.Sleep(time.Second * 3)
 		for {
-
 			//log.Print("test")
 			bytes, _, err := r.ReadLine()
 			//log.Print("Reading from serial port ", s)
@@ -123,14 +135,16 @@ func startMatch(reader io.Reader) {
 
 func goal(team string) {
 	//log.Println("goal:", team)
-	if time.Since(lastGoal) > time.Second*3 {
+	if time.Since(stats.LastGoalTime) > time.Second*3 {
 		switch {
 		case strings.Contains(team, "1"):
-			team1++
-			fmt.Printf("team 1 score:%v\n", team1)
+			stats.Team1++
+			stats.LastGoalTeam = goalTeam1
+			fmt.Printf("team 1 score:%v\n", stats.Team1)
 		case strings.Contains(team, "2"):
-			team2++
-			fmt.Printf("team 2 score:%v\n", team2)
+			stats.Team2++
+			stats.LastGoalTeam = goalTeam2
+			fmt.Printf("team 2 score:%v\n", stats.Team2)
 		default:
 			if team != "" {
 				fmt.Printf("unknown output: %q\n", team)
@@ -139,13 +153,13 @@ func goal(team string) {
 			return
 		}
 		log.Println("got goal")
-		lastGoal = time.Now()
+		stats.LastGoalTime = time.Now()
 
 		go writeSrt()
 		stopRecording <- true
 
-		if team1 >= maxPoints || team2 >= maxPoints {
-			team1, team2 = 0, 0
+		if stats.Team1 >= maxPoints || stats.Team2 >= maxPoints {
+			stats.Team1, stats.Team2 = 0, 0
 		}
 	}
 }
@@ -161,7 +175,7 @@ func writeSrt() error {
 	var t time.Time
 	for i := 1; i <= 600; i++ {
 		t2 := t.Add(time.Second * 1)
-		fmt.Fprintf(f, "%v\n%v --> %v\n%v:%v\n\n", i, t.Format("15:04:05,000"), t2.Format("15:04:05,000"), team1, team2)
+		fmt.Fprintf(f, "%v\n%v --> %v\n%v:%v\n\n", i, t.Format("15:04:05,000"), t2.Format("15:04:05,000"), stats.Team1, stats.Team2)
 		t = t2
 	}
 
@@ -255,7 +269,7 @@ func startMplayer() *exec.Cmd {
 	fmt.Println("start at", newStart)
 
 	//cmd := exec.Command("mplayer", "-fs" ,"-fixed-vo", "-ss", newStart, "-endpos", "1.00", "-speed", "1/4", "-loop", "0", outFile)
-	cmd := exec.Command("mplayer", "-fs", "-fixed-vo", "-ss", newStart, "-speed", "1/4", "-sub", "score.srt", "-loop", "0", outFile)
+	cmd := exec.Command("mplayer", "-zoom", "-fs", "-fixed-vo", "-ss", newStart, "-speed", "1/4", "-sub", "score.srt", "-loop", "0", outFile)
 	//cmd := exec.Command("cvlc", "-L", "--rate", "0.25", "--start-time", newStart, "--sub-file=", "score.srt", "--input-fast-seek", outFile)
 	//cmd.Stdout = os.Stdout
 	err = cmd.Start()
@@ -297,4 +311,24 @@ func killChan(cmd exec.Cmd, kill chan bool) chan error {
 		log.Println("process killed")
 	}()
 	return done
+}
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(stats)
+}
+
+func resetHandler(w http.ResponseWriter, r *http.Request) {
+	switch stats.LastGoalTeam {
+	case goalTeam1:
+		stats.Team1--
+	case goalTeam2:
+		stats.Team2--
+	}
+	stats.LastGoalTeam = 0
+	json.NewEncoder(w).Encode(stats)
+}
+
+func restartHandler(w http.ResponseWriter, r *http.Request) {
+	stats.Team1, stats.Team2 = 0, 0
+	json.NewEncoder(w).Encode(stats)
 }
