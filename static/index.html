@@ -1,0 +1,110 @@
+<html>
+<head>
+<title>Chat Example</title>
+<script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
+
+
+  <!-- Chang URLs to wherever Video.js files will be hosted -->
+  <link href="video-js.css" rel="stylesheet" type="text/css">
+  <!-- video.js must be in the <head> for older IEs to work. -->
+  <script src="video.js"></script>
+<script type="text/javascript">
+    $(function() {
+
+    var conn;
+    var msg = $("#msg");
+    var log = $("#log");
+
+    function appendLog(msg) {
+        var d = log[0]
+        var doScroll = d.scrollTop == d.scrollHeight - d.clientHeight;
+        msg.appendTo(log)
+        if (doScroll) {
+            d.scrollTop = d.scrollHeight - d.clientHeight;
+        }
+
+        $( "log" ).replaceWith( "<h2>New heading</h2>" );
+    }
+
+    $("#form").submit(function() {
+        $.post( "/reset" );
+        return false
+    });
+
+    $("#form2").submit(function() {
+        $.post( "restart" );
+        return false
+    });
+
+    if (window["WebSocket"]) {
+        conn = new WebSocket("ws://localhost:8080/ws");
+        conn.onclose = function(evt) {
+            appendLog($("<div><b>Connection closed.</b></div>"))
+        }
+        conn.onmessage = function(evt) {
+            if (evt.data.indexOf("http") == 0) {
+                console.log(evt.data)
+                var player = _V_("kicker_player")
+
+                var startSlowmo = function() {
+                    console.log("start slowmo")
+                    var myPlayer = this
+                    player.src("http://localhost:8081/slow.mp4")
+                };
+
+                player.one("loadedmetadata", function() {
+                    setTimeout(startSlowmo, player.duration()*1000)
+                });
+
+                player.src("http://localhost:8081/normal.mp4")
+
+                //player.play()
+            } else {
+                $( "#log" ).replaceWith( "<h1 id=\"log\">"+ evt.data+"</h1>");
+            }
+
+            //appendLog($("<div/>").text(evt.data))
+        }
+    } else {
+        appendLog($("<div><b>Your browser does not support WebSockets.</b></div>"))
+    }
+    });
+</script>
+<link href="bootstrap.css" rel="stylesheet">
+<style type="text/css">
+.container {
+text-align: center;
+}
+</style>
+</head>
+<body>
+<div class="container">
+      <video id="kicker_player" class="video-js vjs-default-skin" 
+      preload="auto" width="640" height="480"
+      autoplay loop controls
+      data-setup="{}">
+
+      <source src="http://localhost:8081/oceans-clip.mp4" type='video/mp4' />
+          <!--
+        <source src="/video-js/videos/oceans-clip.mp4" type='video/mp4' /> 
+        <source src="http://video-js.zencoder.com/oceans-clip.mp4" type='video/mp4' />
+        <source src="http://video-js.zencoder.com/oceans-clip.webm" type='video/webm' />
+        <source src="http://video-js.zencoder.com/oceans-clip.ogv" type='video/ogg' />
+        <track kind="captions" src="demo.captions.vtt" srclang="en" label="English"></track><!-- Tracks need an ending tag thanks to IE9 -->
+        <track kind="subtitles" src="demo.captions.vtt" srclang="en" label="English"></track><!-- Tracks need an ending tag thanks to IE9 -->
+    -->
+    </video>
+
+    <h1 id="log"></h1>
+
+    <form id="form">
+        <input class="btn btn-default" type="submit" value="Reset last goal" />
+        <input type="hidden" id="msg" value="reset" />
+    </form>
+    <form id="form2">
+        <input class="btn btn-default" type="submit" value="Restart game" />
+        <input type="hidden" id="msg" value="restart" />
+    </form>
+</div>
+</body>
+</html>

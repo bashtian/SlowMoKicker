@@ -13,8 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	serial "github.com/tarm/goserial"
 )
 
 const (
@@ -26,6 +24,7 @@ const (
 )
 
 var debug = flag.Bool("d", false, "simulate input")
+var timeToRestart = flag.Int("t", 7, "time to restart after the game ended")
 var videoInput = flag.String("v", "/dev/video0", "video input device")
 
 //var lastGoalTime = time.Now()
@@ -36,51 +35,7 @@ var ffmpeg *exec.Cmd
 
 var stopRecording = make(chan bool)
 
-type Stats struct {
-	Team1        int64
-	Team2        int64
-	LastGoalTime time.Time
-	LastGoalTeam int64
-}
-
 var stats = Stats{LastGoalTime: time.Now()}
-
-func main() {
-	//runtime.GOMAXPROCS(runtime.NumCPU())
-	flag.Parse()
-	//go startMplayer()
-	if *debug {
-		r, w := io.Pipe()
-
-		//w bufio.NewWriter(wr)
-		go func() {
-			for {
-				time.Sleep(15 * time.Second)
-				fmt.Fprintln(w, "1\r")
-
-			}
-		}()
-		go startMatch(r)
-
-	} else {
-		tty := flag.Arg(0)
-		if tty == "" {
-			tty = "/dev/ttyACM0"
-		}
-		log.Print("Opening serial port", tty)
-		c := &serial.Config{Name: tty, Baud: 9600}
-		s, err := serial.OpenPort(c)
-		if err != nil {
-			log.Fatal(err)
-		}
-		startMatch(s)
-	}
-
-	http.HandleFunc("/", handler)
-	http.HandleFunc("/reset", resetHandler)
-	http.HandleFunc("/restart", restartHandler)
-	http.ListenAndServe(":8080", nil)
-}
 
 func startMatch(reader io.Reader) {
 	//ffmpeg = startRecording()
@@ -129,7 +84,7 @@ func startMatch(reader io.Reader) {
 			//stop waiting for the reader to send something on channel rc
 		}
 
-		time.Sleep(2 * time.Millisecond) //stutter the infinite loop.
+		time.Sleep(200 * time.Millisecond) //stutter the infinite loop.
 	}
 }
 
@@ -140,10 +95,12 @@ func goal(team string) {
 		case strings.Contains(team, "1"):
 			stats.Team1++
 			stats.LastGoalTeam = goalTeam1
+			sendMessage()
 			fmt.Printf("team 1 score:%v\n", stats.Team1)
 		case strings.Contains(team, "2"):
 			stats.Team2++
 			stats.LastGoalTeam = goalTeam2
+			sendMessage()
 			fmt.Printf("team 2 score:%v\n", stats.Team2)
 		default:
 			if team != "" {
@@ -155,13 +112,25 @@ func goal(team string) {
 		log.Println("got goal")
 		stats.LastGoalTime = time.Now()
 
-		go writeSrt()
+		//go writeSrt()
 		stopRecording <- true
-
-		if stats.Team1 >= maxPoints || stats.Team2 >= maxPoints {
-			stats.Team1, stats.Team2 = 0, 0
+		if stats.IsFinshed() {
+			finishGame()
 		}
 	}
+}
+
+func finishGame() {
+	go func() {
+		h.broadcast <- stats.TextBytes()
+		time.Sleep(time.Second * time.Duration(*timeToRestart))
+		stats.Restart()
+		h.broadcast <- stats.TextBytes()
+	}()
+}
+
+func sendMessage() {
+	h.broadcast <- stats.TextBytes()
 }
 
 func writeSrt() error {
@@ -194,15 +163,18 @@ func interruptRecording() {
 }
 
 func startRecordingLoop() {
-	os.Remove(tempFile)
+	//os.Remove(tempFile)
 	for {
 		//ffmpeg = exec.Command("ffmpeg", "-f", "video4linux2", "-s", "640x480", "-r", "60", "-i", "/dev/video0", "-vcodec", "libx264", tempFile)
 		errorChan := make(chan error)
 		successChan := make(chan bool)
-
+		filename := fmt.Sprintf("video-%v.avi", time.Now().Unix())
 		go func() {
 			log.Println("start recording")
-			ffmpeg = exec.Command("ffmpeg", "-f", "video4linux2", "-s", "640x480", "-r", "60", "-i", *videoInput, tempFile)
+
+			//ffmpeg = exec.Command("./kicker-video.sh", "capture", *videoInput, filename)
+			//ffmpeg -f video4linux2 -s 640x480 -r 60 -i $1 -c:v mpeg2video -q 2 -t 300 -y $2
+			ffmpeg = exec.Command("ffmpeg", "-f", "video4linux2", "-s", "640x480", "-i", *videoInput, "-r", "60", "-t", "300", "-y", filename)
 			b, err := ffmpeg.CombinedOutput()
 			if err != nil && err.Error() != "exit status 255" {
 				log.Print(string(b))
@@ -219,26 +191,42 @@ func startRecordingLoop() {
 			log.Println("stopRecording")
 			interruptRecording()
 			<-successChan
+			go convertFile(filename)
 		// a read from ch has occurred
 		case err := <-errorChan:
 			log.Println("got error chan")
 			log.Fatal(err)
 			// the read from ch has timed out
+		case <-successChan:
+			log.Println("ffmpeg timelimit reached")
+			// ffmepg timelimit
 		}
 
-		os.Remove(outFile)
-		err := os.Rename(tempFile, outFile)
-		if err != nil {
-			log.Print("error renaming file:" + err.Error())
-			continue
-		}
+		// os.Remove(outFile)
+		// err := os.Rename(tempFile, outFile)
+		// if err != nil {
+		// 	log.Print("error renaming file:" + err.Error())
+		// 	continue
+		// }
 
-		if mplayer != nil {
-			mplayer.Process.Kill()
-		}
+		// if mplayer != nil {
+		// 	mplayer.Process.Kill()
+		// }
 
-		mplayer = startMplayer()
+		//mplayer = startMplayer()
 	}
+}
+
+func convertFile(filename string) {
+	log.Println("converting", filename)
+	cmd := exec.Command("./kicker-video.sh", "generate-mp4", filename, "video/normal.mp4", "video/slow.mp4")
+	err := cmd.Start()
+	if err != nil {
+		log.Println("generate error:", err)
+	}
+	log.Println("converting finished", filename)
+	h.broadcast <- []byte("http://localhost:8081/slow.mp4")
+	h.broadcast <- stats.TextBytes()
 }
 
 /*func startRecording() *exec.Cmd {
@@ -318,17 +306,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func resetHandler(w http.ResponseWriter, r *http.Request) {
-	switch stats.LastGoalTeam {
-	case goalTeam1:
-		stats.Team1--
-	case goalTeam2:
-		stats.Team2--
-	}
-	stats.LastGoalTeam = 0
-	json.NewEncoder(w).Encode(stats)
+	stats.ResetLastGoal()
+	h.broadcast <- stats.TextBytes()
+	//json.NewEncoder(w).Encode(stats)
 }
 
 func restartHandler(w http.ResponseWriter, r *http.Request) {
-	stats.Team1, stats.Team2 = 0, 0
-	json.NewEncoder(w).Encode(stats)
+	stats.Restart()
+	h.broadcast <- stats.TextBytes()
+	//json.NewEncoder(w).Encode(stats)
 }
