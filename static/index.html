@@ -26,6 +26,11 @@
         $( "log" ).replaceWith( "<h2>New heading</h2>" );
     }
 
+    function sleep(delay) {
+        var start = new Date().getTime();
+        while (new Date().getTime() < start + delay);
+      }
+
     $("#form").submit(function() {
         $.post( "/reset" );
         return false
@@ -33,6 +38,16 @@
 
     $("#form2").submit(function() {
         $.post( "restart" );
+        return false
+    });
+
+    $("#goal1").submit(function() {
+        $.post( "goal1" );
+        return false
+    });
+
+    $("#goal2").submit(function() {
+        $.post( "goal2" );
         return false
     });
 
@@ -49,14 +64,15 @@
                 var startSlowmo = function() {
                     console.log("start slowmo")
                     var myPlayer = this
-                    player.src("http://localhost:8081/slow.mp4")
+                    player.src("/video/slow.mp4?" + Date.now())
                 };
 
                 player.one("loadedmetadata", function() {
                     setTimeout(startSlowmo, player.duration()*1000)
                 });
-
-                player.src("http://localhost:8081/normal.mp4")
+                console.log("/video/normal.mp4?" + Date.now())
+                sleep(1000);
+                player.src("/video/normal.mp4?" + Date.now())
 
                 //player.play()
             } else {
@@ -84,26 +100,22 @@ text-align: center;
       autoplay loop controls
       data-setup="{}">
 
-      <source src="http://localhost:8081/oceans-clip.mp4" type='video/mp4' />
-          <!--
-        <source src="/video-js/videos/oceans-clip.mp4" type='video/mp4' /> 
-        <source src="http://video-js.zencoder.com/oceans-clip.mp4" type='video/mp4' />
-        <source src="http://video-js.zencoder.com/oceans-clip.webm" type='video/webm' />
-        <source src="http://video-js.zencoder.com/oceans-clip.ogv" type='video/ogg' />
-        <track kind="captions" src="demo.captions.vtt" srclang="en" label="English"></track><!-- Tracks need an ending tag thanks to IE9 -->
-        <track kind="subtitles" src="demo.captions.vtt" srclang="en" label="English"></track><!-- Tracks need an ending tag thanks to IE9 -->
-    -->
+    
     </video>
 
     <h1 id="log"></h1>
 
     <form id="form">
         <input class="btn btn-default" type="submit" value="Reset last goal" />
-        <input type="hidden" id="msg" value="reset" />
     </form>
     <form id="form2">
         <input class="btn btn-default" type="submit" value="Restart game" />
-        <input type="hidden" id="msg" value="restart" />
+    </form>
+    <form id="goal1">
+        <input class="btn btn-default" type="submit" value="Goal Team 1" />
+    </form>
+    <form id="goal2">
+        <input class="btn btn-default" type="submit" value="Goal Team 2" />
     </form>
 </div>
 </body>

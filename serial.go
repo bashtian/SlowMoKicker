@@ -2,12 +2,9 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -22,10 +19,6 @@ const (
 	tempFile  = "temp.mkv"
 	outFile   = "output.mkv"
 )
-
-var debug = flag.Bool("d", false, "simulate input")
-var timeToRestart = flag.Int("t", 7, "time to restart after the game ended")
-var videoInput = flag.String("v", "/dev/video0", "video input device")
 
 //var lastGoalTime = time.Now()
 //var lastGoalTeam = 0
@@ -91,29 +84,29 @@ func startMatch(reader io.Reader) {
 func goal(team string) {
 	//log.Println("goal:", team)
 	if time.Since(stats.LastGoalTime) > time.Second*3 {
-		switch {
-		case strings.Contains(team, "1"):
-			stats.Team1++
-			stats.LastGoalTeam = goalTeam1
-			sendMessage()
-			fmt.Printf("team 1 score:%v\n", stats.Team1)
-		case strings.Contains(team, "2"):
-			stats.Team2++
-			stats.LastGoalTeam = goalTeam2
-			sendMessage()
-			fmt.Printf("team 2 score:%v\n", stats.Team2)
-		default:
-			if team != "" {
-				fmt.Printf("unknown output: %q\n", team)
-			}
-
-			return
-		}
 		log.Println("got goal")
 		stats.LastGoalTime = time.Now()
 
 		//go writeSrt()
 		stopRecording <- true
+		switch {
+		case strings.Contains(team, "1"):
+			stats.Team1++
+			stats.LastGoalTeam = goalTeam1
+			sendMessage()
+			log.Printf("team 1 score:%v\n", stats.Team1)
+		case strings.Contains(team, "2"):
+			stats.Team2++
+			stats.LastGoalTeam = goalTeam2
+			sendMessage()
+			log.Printf("team 2 score:%v\n", stats.Team2)
+		default:
+			if team != "" {
+				fmt.Printf("unknown output: %q\n", team)
+			}
+			return
+		}
+
 		if stats.IsFinshed() {
 			finishGame()
 		}
@@ -299,20 +292,4 @@ func killChan(cmd exec.Cmd, kill chan bool) chan error {
 		log.Println("process killed")
 	}()
 	return done
-}
-
-func handler(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(stats)
-}
-
-func resetHandler(w http.ResponseWriter, r *http.Request) {
-	stats.ResetLastGoal()
-	h.broadcast <- stats.TextBytes()
-	//json.NewEncoder(w).Encode(stats)
-}
-
-func restartHandler(w http.ResponseWriter, r *http.Request) {
-	stats.Restart()
-	h.broadcast <- stats.TextBytes()
-	//json.NewEncoder(w).Encode(stats)
 }
